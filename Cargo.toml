@@ -3,6 +3,9 @@ name = "pvw"
 version = "0.1.0"
 edition = "2021"
 
+[dependencies]
+utf-8 = "0.7.6"
+
 [dependencies.nix]
 version = "0.26.1"
 features = [
