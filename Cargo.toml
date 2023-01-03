@@ -3,4 +3,8 @@ name = "pvw"
 version = "0.1.0"
 edition = "2021"
 
-[dependencies]
+[dependencies.nix]
+version = "0.26.1"
+features = [
+  "term",
+]
