@@ -48,6 +48,7 @@ fn main() -> std::io::Result<()> {
                 }
 
                 stdout.write_all(str.as_bytes())?;
+                stdout.flush()?;
             }
         }
     }
