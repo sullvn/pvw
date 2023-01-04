@@ -40,6 +40,11 @@ fn main() -> std::io::Result<()> {
     let mut reader = BufReadDecoder::new(BufReader::new(stdin));
     let mut char_buf = [0; 4];
 
+    // - Erase whole display (keep scrollback)
+    // - Move cursor to top
+    stdout.write_all("\u{1b}[2J\u{1b}[1;1H".as_bytes())?;
+    stdout.flush()?;
+
     while let Some(maybe_str) = reader.next_lossy() {
         let str = maybe_str?;
         for c in str.chars() {
