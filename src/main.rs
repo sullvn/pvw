@@ -5,6 +5,8 @@ use std::io::stdout;
 use std::io::BufReader;
 use std::io::Write;
 use std::os::fd::AsRawFd;
+use std::process::Command;
+use std::string::String;
 use utf8::BufReadDecoder;
 
 fn main() -> std::io::Result<()> {
@@ -39,6 +41,7 @@ fn main() -> std::io::Result<()> {
 
     let mut reader = BufReadDecoder::new(BufReader::new(stdin));
     let mut char_buf = [0; 4];
+    let mut command = String::new();
 
     // - Erase whole display (keep scrollback)
     // - Move cursor to top
@@ -50,11 +53,31 @@ fn main() -> std::io::Result<()> {
         for c in str.chars() {
             match c {
                 // Escape
-                '\u{1b}' | '\r' | '\n' => {
+                '\u{1b}' => {
+                    return Ok(());
+                }
+                '\r' | '\n' => {
+                    let mut command_tokens = command.split_whitespace();
+                    let maybe_program = command_tokens.next();
+                    let args = command_tokens;
+
+                    if let Some(program) = maybe_program {
+                        let output = Command::new(program).args(args).output()?;
+                        stdout.write_all("\nexit\n".as_bytes())?;
+                        stdout
+                            .write_all(output.status.code().unwrap_or(0).to_string().as_bytes())?;
+                        stdout.write_all("\nstdout\n".as_bytes())?;
+                        stdout.write_all(&output.stdout)?;
+                        stdout.write_all("\nstderr\n".as_bytes())?;
+                        stdout.write_all(&output.stderr)?;
+                    }
+
                     return Ok(());
                 }
                 // Backspace, Delete
                 '\u{8}' | '\u{7f}' => {
+                    command.pop();
+
                     //
                     // 1. Move left one column (Can use control code or backspace)
                     // 2. Erase to end of line
@@ -66,6 +89,7 @@ fn main() -> std::io::Result<()> {
                     stdout.write_all("\u{1b}[1D\u{1b}[0K".as_bytes())?;
                 }
                 _ => {
+                    command.push(c);
                     stdout.write_all(c.encode_utf8(&mut char_buf).as_bytes())?;
                 }
             }
