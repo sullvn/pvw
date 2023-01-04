@@ -31,13 +31,14 @@ fn main() -> std::io::Result<()> {
         ));
     }
 
+    let mut term_config = termios::tcgetattr(stdout_fd)?;
+    let term_config_original = term_config.clone();
+    termios::cfmakeraw(&mut term_config);
+    termios::tcsetattr(stdout_fd, termios::SetArg::TCSANOW, &term_config)?;
+
     let mut term_config = termios::tcgetattr(stdin_fd)?;
     termios::cfmakeraw(&mut term_config);
     termios::tcsetattr(stdin_fd, termios::SetArg::TCSANOW, &term_config)?;
-
-    let mut term_config = termios::tcgetattr(stdout_fd)?;
-    termios::cfmakeraw(&mut term_config);
-    termios::tcsetattr(stdout_fd, termios::SetArg::TCSANOW, &term_config)?;
 
     let mut reader = BufReadDecoder::new(BufReader::new(stdin));
     let mut char_buf = [0; 4];
@@ -62,6 +63,11 @@ fn main() -> std::io::Result<()> {
                     let args = command_tokens;
 
                     if let Some(program) = maybe_program {
+                        termios::tcsetattr(
+                            stdout_fd,
+                            termios::SetArg::TCSANOW,
+                            &term_config_original,
+                        )?;
                         let output = Command::new(program).args(args).output()?;
                         stdout.write_all("\nexit\n".as_bytes())?;
                         stdout
