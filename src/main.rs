@@ -41,23 +41,32 @@ fn main() -> std::io::Result<()> {
     let mut char_buf = [0; 4];
 
     while let Some(maybe_str) = reader.next_lossy() {
-        match maybe_str {
-            Err(err) => return Err(err),
-            Ok(str) => {
-                for c in str.chars() {
-                    match c {
-                        'q' => {
-                            return Ok(());
-                        }
-                        _ => {
-                            stdout.write_all(c.encode_utf8(&mut char_buf).as_bytes())?;
-                        }
-                    }
+        let str = maybe_str?;
+        for c in str.chars() {
+            match c {
+                // Escape
+                '\u{1b}' | '\r' | '\n' => {
+                    return Ok(());
                 }
-
-                stdout.flush()?;
+                // Backspace, Delete
+                '\u{8}' | '\u{7f}' => {
+                    //
+                    // 1. Move left one column (Can use control code or backspace)
+                    // 2. Erase to end of line
+                    //
+                    // Using ANSI, not ECH or DCH in Linux console codes:
+                    //
+                    // https://man7.org/linux/man-pages/man4/console_codes.4.html
+                    //
+                    stdout.write_all("\u{1b}[1D\u{1b}[0K".as_bytes())?;
+                }
+                _ => {
+                    stdout.write_all(c.encode_utf8(&mut char_buf).as_bytes())?;
+                }
             }
         }
+
+        stdout.flush()?;
     }
 
     Ok(())
