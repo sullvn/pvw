@@ -38,16 +38,23 @@ fn main() -> std::io::Result<()> {
     termios::tcsetattr(stdout_fd, termios::SetArg::TCSANOW, &term_config)?;
 
     let mut reader = BufReadDecoder::new(BufReader::new(stdin));
+    let mut char_buf = [0; 4];
+
     while let Some(maybe_str) = reader.next_lossy() {
         match maybe_str {
             Err(err) => return Err(err),
             Ok(str) => {
-                // TODO: Write everything up to exit character
-                if str.contains("q") {
-                    return Ok(());
+                for c in str.chars() {
+                    match c {
+                        'q' => {
+                            return Ok(());
+                        }
+                        _ => {
+                            stdout.write_all(c.encode_utf8(&mut char_buf).as_bytes())?;
+                        }
+                    }
                 }
 
-                stdout.write_all(str.as_bytes())?;
                 stdout.flush()?;
             }
         }
