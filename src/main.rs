@@ -47,7 +47,7 @@ fn main() -> std::io::Result<()> {
     grantpt(&master_fd)?;
     unlockpt(&master_fd)?;
 
-    let slave_path = dbg!(unsafe { ptsname(&master_fd)? });
+    let slave_path = unsafe { ptsname(&master_fd)? };
     let slave_fd: OwnedFd = File::options()
         .read(true)
         .write(true)
@@ -83,14 +83,12 @@ fn main() -> std::io::Result<()> {
                             &term_config_original,
                         )?;
 
-                        println!("A");
                         let mut process = Command::new(program)
                             .args(args)
                             .stdin(slave_fd.try_clone()?)
                             .stdout(slave_fd.try_clone()?)
                             .stderr(slave_fd)
                             .spawn()?;
-                        println!("B");
 
                         let mut output = BufReader::new(master_fd);
                         stdout.write_all("\noutput\n".as_bytes())?;
