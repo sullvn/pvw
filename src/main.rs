@@ -2,21 +2,21 @@ use nix::fcntl::OFlag;
 use nix::pty::{grantpt, posix_openpt, ptsname, unlockpt};
 use nix::sys::termios;
 use nix::unistd::isatty;
-use std::io::stdin;
-use std::io::stdout;
-use std::io::BufReader;
-use std::io::Write;
-use std::os::fd::AsRawFd;
+use std::fs::File;
+use std::io::{self, stdin, stdout, BufReader, BufWriter, Write};
+use std::os::fd::{AsRawFd, OwnedFd};
 use std::process::Command;
 use std::string::String;
 use utf8::BufReadDecoder;
 
 fn main() -> std::io::Result<()> {
     let stdin = stdin();
-    let mut stdout = stdout();
+    let stdout = stdout();
 
     let stdin_fd = stdin.as_raw_fd();
     let stdout_fd = stdout.as_raw_fd();
+
+    let mut stdout = BufWriter::new(stdout);
 
     let is_stdin_tty = isatty(stdin_fd)?;
     if !is_stdin_tty {
@@ -42,13 +42,17 @@ fn main() -> std::io::Result<()> {
     termios::cfmakeraw(&mut term_config);
     termios::tcsetattr(stdin_fd, termios::SetArg::TCSANOW, &term_config)?;
 
-    let master_fd = posix_openpt(OFlag::O_RDWR)?;
+    let master_fd = posix_openpt(OFlag::O_RDWR | OFlag::O_NOCTTY)?;
 
     grantpt(&master_fd)?;
     unlockpt(&master_fd)?;
 
-    let slave_path = unsafe { ptsname(&master_fd)? };
-    println!("{}", slave_path);
+    let slave_path = dbg!(unsafe { ptsname(&master_fd)? });
+    let slave_fd: OwnedFd = File::options()
+        .read(true)
+        .write(true)
+        .open(slave_path)?
+        .into();
 
     let mut reader = BufReadDecoder::new(BufReader::new(stdin));
     let mut char_buf = [0; 4];
@@ -78,14 +82,23 @@ fn main() -> std::io::Result<()> {
                             termios::SetArg::TCSANOW,
                             &term_config_original,
                         )?;
-                        let output = Command::new(program).args(args).output()?;
+
+                        println!("A");
+                        let mut process = Command::new(program)
+                            .args(args)
+                            .stdin(slave_fd.try_clone()?)
+                            .stdout(slave_fd.try_clone()?)
+                            .stderr(slave_fd)
+                            .spawn()?;
+                        println!("B");
+
+                        let mut output = BufReader::new(master_fd);
+                        stdout.write_all("\noutput\n".as_bytes())?;
+                        io::copy(&mut output, &mut stdout)?;
+
+                        let exit_status = process.wait()?.code().unwrap_or(0);
                         stdout.write_all("\nexit\n".as_bytes())?;
-                        stdout
-                            .write_all(output.status.code().unwrap_or(0).to_string().as_bytes())?;
-                        stdout.write_all("\nstdout\n".as_bytes())?;
-                        stdout.write_all(&output.stdout)?;
-                        stdout.write_all("\nstderr\n".as_bytes())?;
-                        stdout.write_all(&output.stderr)?;
+                        stdout.write_all(exit_status.to_string().as_bytes())?;
                     }
 
                     return Ok(());
