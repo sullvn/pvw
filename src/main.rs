@@ -1,3 +1,5 @@
+use nix::fcntl::OFlag;
+use nix::pty::{grantpt, posix_openpt, ptsname, unlockpt};
 use nix::sys::termios;
 use nix::unistd::isatty;
 use std::io::stdin;
@@ -39,6 +41,14 @@ fn main() -> std::io::Result<()> {
     let mut term_config = termios::tcgetattr(stdin_fd)?;
     termios::cfmakeraw(&mut term_config);
     termios::tcsetattr(stdin_fd, termios::SetArg::TCSANOW, &term_config)?;
+
+    let master_fd = posix_openpt(OFlag::O_RDWR)?;
+
+    grantpt(&master_fd)?;
+    unlockpt(&master_fd)?;
+
+    let slave_path = unsafe { ptsname(&master_fd)? };
+    println!("{}", slave_path);
 
     let mut reader = BufReadDecoder::new(BufReader::new(stdin));
     let mut char_buf = [0; 4];
