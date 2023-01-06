@@ -107,27 +107,29 @@ fn main() -> std::io::Result<()> {
                 '\u{8}' | '\u{7f}' => {
                     command.pop();
 
-                    //
-                    // 1. Move left one column (Can use control code or backspace)
-                    // 2. Erase to end of line
+                    // - Move cursor to top
+                    // - Erase line
+                    // - Print command
                     //
                     // Using ANSI, not ECH or DCH in Linux console codes:
                     //
                     // https://man7.org/linux/man-pages/man4/console_codes.4.html
                     //
-                    stdout.write_all("\u{1b}[1D\u{1b}[0K".as_bytes())?;
+                    // TODO
+                    //
+                    // Avoid unnecessary redraws by only
+                    // drawing the difference. Use
+                    // `unicode_segmentation` to calculate
+                    // which position to jump to.
+                    //
+                    stdout.write_all("\u{1b}[1;1H\u{1b}[0K".as_bytes())?;
+                    stdout.write_all(command.as_bytes())?;
 
                     let mut command_tokens = command.split_whitespace();
                     let maybe_program = command_tokens.next();
                     let args = command_tokens;
 
                     if let Some(program) = maybe_program {
-                        termios::tcsetattr(
-                            stdout_fd,
-                            termios::SetArg::TCSANOW,
-                            &term_config_original,
-                        )?;
-
                         let mut command = Command::new(program);
                         command
                             .args(args)
@@ -141,6 +143,16 @@ fn main() -> std::io::Result<()> {
                         };
 
                         let exit_status = new_process.wait()?.code().unwrap_or(0);
+
+                        // - Move down to next line
+                        // - Clear display
+                        // - Render output
+                        stdout.write_all("\u{1b}[1;2\u{1b}[0J".as_bytes())?;
+                        termios::tcsetattr(
+                            stdout_fd,
+                            termios::SetArg::TCSANOW,
+                            &term_config_original,
+                        )?;
 
                         stdout.write_all("\noutput\n".as_bytes())?;
                         if let Err(err) = io::copy(&mut output, &mut stdout) {
@@ -157,17 +169,29 @@ fn main() -> std::io::Result<()> {
                 _ => {
                     command.push(c);
 
+                    // - Move cursor to top
+                    // - Erase line
+                    // - Print command
+                    //
+                    // Using ANSI, not ECH or DCH in Linux console codes:
+                    //
+                    // https://man7.org/linux/man-pages/man4/console_codes.4.html
+                    //
+                    // TODO
+                    //
+                    // Avoid unnecessary redraws by only
+                    // drawing the difference. Use
+                    // `unicode_segmentation` to calculate
+                    // which position to jump to.
+                    //
+                    stdout.write_all("\u{1b}[1;1H\u{1b}[0K".as_bytes())?;
+                    stdout.write_all(command.as_bytes())?;
+
                     let mut command_tokens = command.split_whitespace();
                     let maybe_program = command_tokens.next();
                     let args = command_tokens;
 
                     if let Some(program) = maybe_program {
-                        termios::tcsetattr(
-                            stdout_fd,
-                            termios::SetArg::TCSANOW,
-                            &term_config_original,
-                        )?;
-
                         let mut command = Command::new(program);
                         command
                             .args(args)
@@ -181,6 +205,16 @@ fn main() -> std::io::Result<()> {
                         };
 
                         let exit_status = new_process.wait()?.code().unwrap_or(0);
+
+                        // - Move down to next line
+                        // - Clear display
+                        // - Render output
+                        stdout.write_all("\u{1b}[1;2\u{1b}[0J".as_bytes())?;
+                        termios::tcsetattr(
+                            stdout_fd,
+                            termios::SetArg::TCSANOW,
+                            &term_config_original,
+                        )?;
 
                         stdout.write_all("\noutput\n".as_bytes())?;
                         if let Err(err) = io::copy(&mut output, &mut stdout) {
