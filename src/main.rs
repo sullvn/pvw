@@ -56,7 +56,6 @@ fn main() -> std::io::Result<()> {
 
     let mut reader = BufReadDecoder::new(BufReader::new(stdin));
     let mut output = BufReader::new(master_fd);
-    let mut char_buf = [0; 4];
 
     // - Erase whole display (keep scrollback)
     // - Move cursor to top
