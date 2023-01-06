@@ -42,7 +42,7 @@ fn main() -> std::io::Result<()> {
     termios::cfmakeraw(&mut term_config);
     termios::tcsetattr(stdin_fd, termios::SetArg::TCSANOW, &term_config)?;
 
-    let master_fd = posix_openpt(OFlag::O_RDWR | OFlag::O_NOCTTY)?;
+    let master_fd = posix_openpt(OFlag::O_RDWR | OFlag::O_NOCTTY | OFlag::O_NONBLOCK)?;
 
     grantpt(&master_fd)?;
     unlockpt(&master_fd)?;
@@ -55,13 +55,16 @@ fn main() -> std::io::Result<()> {
         .into();
 
     let mut reader = BufReadDecoder::new(BufReader::new(stdin));
+    let mut output = BufReader::new(master_fd);
     let mut char_buf = [0; 4];
-    let mut command = String::new();
 
     // - Erase whole display (keep scrollback)
     // - Move cursor to top
     stdout.write_all("\u{1b}[2J\u{1b}[1;1H".as_bytes())?;
     stdout.flush()?;
+
+    // State
+    let mut command = String::new();
 
     while let Some(maybe_str) = reader.next_lossy() {
         let str = maybe_str?;
@@ -83,18 +86,18 @@ fn main() -> std::io::Result<()> {
                             &term_config_original,
                         )?;
 
-                        let mut process = Command::new(program)
+                        let mut new_process = Command::new(program)
                             .args(args)
                             .stdin(slave_fd.try_clone()?)
                             .stdout(slave_fd.try_clone()?)
                             .stderr(slave_fd)
                             .spawn()?;
 
-                        let mut output = BufReader::new(master_fd);
+                        let exit_status = new_process.wait()?.code().unwrap_or(0);
+
                         stdout.write_all("\noutput\n".as_bytes())?;
                         io::copy(&mut output, &mut stdout)?;
 
-                        let exit_status = process.wait()?.code().unwrap_or(0);
                         stdout.write_all("\nexit\n".as_bytes())?;
                         stdout.write_all(exit_status.to_string().as_bytes())?;
                     }
@@ -114,15 +117,89 @@ fn main() -> std::io::Result<()> {
                     // https://man7.org/linux/man-pages/man4/console_codes.4.html
                     //
                     stdout.write_all("\u{1b}[1D\u{1b}[0K".as_bytes())?;
+
+                    let mut command_tokens = command.split_whitespace();
+                    let maybe_program = command_tokens.next();
+                    let args = command_tokens;
+
+                    if let Some(program) = maybe_program {
+                        termios::tcsetattr(
+                            stdout_fd,
+                            termios::SetArg::TCSANOW,
+                            &term_config_original,
+                        )?;
+
+                        let mut command = Command::new(program);
+                        command
+                            .args(args)
+                            .stdin(slave_fd.try_clone()?)
+                            .stdout(slave_fd.try_clone()?)
+                            .stderr(slave_fd.try_clone()?);
+                        let mut new_process = match command.spawn() {
+                            Ok(new_process) => new_process,
+                            Err(err) if err.kind() == io::ErrorKind::NotFound => continue,
+                            Err(err) => return Err(err),
+                        };
+
+                        let exit_status = new_process.wait()?.code().unwrap_or(0);
+
+                        stdout.write_all("\noutput\n".as_bytes())?;
+                        if let Err(err) = io::copy(&mut output, &mut stdout) {
+                            match err.kind() {
+                                io::ErrorKind::WouldBlock => {}
+                                err_kind => return Err(err_kind.into()),
+                            }
+                        }
+
+                        stdout.write_all("\nexit\n".as_bytes())?;
+                        stdout.write_all(exit_status.to_string().as_bytes())?;
+                    }
                 }
                 _ => {
                     command.push(c);
-                    stdout.write_all(c.encode_utf8(&mut char_buf).as_bytes())?;
+
+                    let mut command_tokens = command.split_whitespace();
+                    let maybe_program = command_tokens.next();
+                    let args = command_tokens;
+
+                    if let Some(program) = maybe_program {
+                        termios::tcsetattr(
+                            stdout_fd,
+                            termios::SetArg::TCSANOW,
+                            &term_config_original,
+                        )?;
+
+                        let mut command = Command::new(program);
+                        command
+                            .args(args)
+                            .stdin(slave_fd.try_clone()?)
+                            .stdout(slave_fd.try_clone()?)
+                            .stderr(slave_fd.try_clone()?);
+                        let mut new_process = match command.spawn() {
+                            Ok(new_process) => new_process,
+                            Err(err) if err.kind() == io::ErrorKind::NotFound => continue,
+                            Err(err) => return Err(err),
+                        };
+
+                        let exit_status = new_process.wait()?.code().unwrap_or(0);
+
+                        stdout.write_all("\noutput\n".as_bytes())?;
+                        if let Err(err) = io::copy(&mut output, &mut stdout) {
+                            match err.kind() {
+                                io::ErrorKind::WouldBlock => {}
+                                err_kind => return Err(err_kind.into()),
+                            }
+                        }
+
+                        stdout.write_all("\nexit\n".as_bytes())?;
+                        stdout.write_all(exit_status.to_string().as_bytes())?;
+                    }
                 }
             }
         }
 
         stdout.flush()?;
+        termios::tcsetattr(stdout_fd, termios::SetArg::TCSANOW, &term_config)?;
     }
 
     Ok(())
