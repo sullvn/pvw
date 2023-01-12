@@ -11,6 +11,8 @@ use std::sync::mpsc;
 use std::thread;
 use utf8::BufReadDecoder;
 
+mod threads;
+
 enum Event {
     KeyPress(char),
     CommandOutput(String),
