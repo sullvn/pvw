@@ -5,7 +5,7 @@ use nix::unistd::isatty;
 use std::fs::File;
 use std::io::{self, stdin, stdout, BufReader, BufWriter, Read, Stdout, Write};
 use std::os::fd::{AsRawFd, OwnedFd, RawFd};
-use std::process::Command;
+use std::process::{self, Command};
 use std::string::String;
 use std::sync::mpsc;
 use std::thread;
@@ -13,6 +13,8 @@ use utf8::BufReadDecoder;
 
 enum Event {
     KeyPress(char),
+    CommandOutput(String),
+    CommandExit(process::ExitStatus),
 }
 
 struct Context {
@@ -27,7 +29,7 @@ struct Context {
 fn user_input_thread<R: Read>(
     user_input: R,
     events: mpsc::Sender<Event>,
-) -> thread::JoinHandle<()> {
+) -> thread::JoinHandle<io::Result<()>> {
     thread::spawn(|| {
         let mut utf8_input = BufReadDecoder::new(BufReader::new(user_input));
         while let Some(maybe_str) = utf8_input.next_lossy() {
@@ -36,6 +38,90 @@ fn user_input_thread<R: Read>(
                 events.send(Event::KeyPress(c))?;
             }
         }
+
+        Ok(())
+    })
+}
+
+// On new command:
+//
+// - Stop old command
+//   - Child::kill
+// - Wait for old command to finish
+//   - Child::wait
+// - Drain pty master buffer
+//   - include command id with output
+//     - PROBLEM: still need to drain to
+//       know which command an output is for
+//   - put in a delimiter in each command's output
+//     - hacky, but may be pretty effective
+//     - requires buffering + parsing
+//     - TIME: 2 cs (in command process)
+//   - stop, then go
+//     - stop blocking read with signal()
+//       - use mutex so stopper can only interrupt
+//         the read
+//     - select(), then read() as needed
+//     - TIME: ~ 3-5cs
+//   - tcflush(fd, TCIOFLUSH)
+//     - steps
+//       1. call tcflush
+//       2. read() is either over, finishing or pending forever
+//       3a. if over, we treat new reads as new data
+//       3b. if finishing, we treat latest read as old data
+//       3c. if pending, we treat new reads as new data
+//   - or, wait for drain
+//     - select/poll in loop until it looks flushed
+//     - read()s continue in background
+//       - QUESTION: How does a read consumer
+//         know when its done?
+//     - scenarios:
+//       1. read() block
+//           select() done
+//       2. read() block -> unblock
+//           select() done
+//       3. read() block -> unblock
+//           select() ready -> select() done
+//       4. read() block -> unblock -> select() done
+//     - TIME: ~ 2-4s
+//     - PROBLEM: how tell difference between
+//       scenarios 1 and 2?
+//   - concurrently read() (block) and read() non-block
+//     - can use read() non-block to check for
+//       status
+//     - PROBLEM: even if defined behavior, how
+//       to guarantee correct-order of merged
+//       results?
+//   - new pty for each process
+//     - PROBLEM: slow af?
+//   - pty swap chain
+//     - PROBLEM: doesn't really solve the
+//       problem
+// - Start new command
+//   - Command::new
+// - Start reading output again
+//
+//
+
+fn command_output_thread(
+    pty_master: PtyMaster,
+    events: mpsc::Sender<Event>,
+) -> thread::JoinHandle<io::Result<()>> {
+    thread::spawn(|| loop {
+        let mut output = String::with_capacity(1000);
+        pty_master.read_to_string(&mut output)?;
+        events.send(Event::CommandOutput(output))?;
+    })
+}
+
+fn command_exit_thread(
+    process: process::Child,
+    events: mpsc::Sender<Event>,
+) -> thread::JoinHandle<io::Result<()>> {
+    thread::spawn(|| {
+        let exit_status = process.wait()?;
+        events.send(Event::CommandExit(exit_status))?;
+        Ok(())
     })
 }
 
@@ -205,6 +291,20 @@ fn handle_key_press(ctx: &mut Context, char: char) -> io::Result<()> {
     }
 }
 
+fn handle_command_output(ctx: &mut Context, output: String) -> io::Result<()> {
+    // - Move down to next line
+    // - Clear display
+    ctx.stdout.write_all("\u{1b}[1;2\u{1b}[0J".as_bytes())?;
+    termios::tcsetattr(
+        ctx.stdout_fd,
+        termios::SetArg::TCSANOW,
+        &ctx.terminal_config_original,
+    )?;
+
+    io::copy(&mut output.as_bytes(), &mut ctx.stdout)?;
+    Ok(())
+}
+
 fn main() -> std::io::Result<()> {
     //
     // Input processing
@@ -247,7 +347,7 @@ fn main() -> std::io::Result<()> {
     //
     // Pseudoterminal configuration
     //
-    let master_fd = posix_openpt(OFlag::O_RDWR | OFlag::O_NOCTTY | OFlag::O_NONBLOCK)?;
+    let master_fd = posix_openpt(OFlag::O_RDWR | OFlag::O_NOCTTY)?;
 
     grantpt(&master_fd)?;
     unlockpt(&master_fd)?;
@@ -275,7 +375,9 @@ fn main() -> std::io::Result<()> {
     // Threads
     //
     let (events_sender, events_receiver) = mpsc::channel::<Event>();
-    let user_input_thread_handle = user_input_thread(stdin, events_sender);
+    let user_input_thread_handle = user_input_thread(stdin, events_sender.clone());
+    let command_output_thread_handle = command_output_thread(master_fd, events_sender.clone());
+    let command_exit_thread_handle = command_exit_thread(nil, events_sender);
 
     //
     // Setup
@@ -290,7 +392,9 @@ fn main() -> std::io::Result<()> {
     //
     for event in events_receiver {
         match event {
+            Event::CommandExit(..) => {}
             Event::KeyPress(char) => handle_key_press(&mut ctx, char)?,
+            Event::CommandOutput(output) => handle_command_output(&mut ctx, output)?,
         }
 
         stdout.flush()?;
@@ -301,6 +405,8 @@ fn main() -> std::io::Result<()> {
     // Teardown
     //
     user_input_thread_handle.join()?;
+    command_output_thread_handle.join()?;
+    command_exit_thread_handle.join()?;
 
     Ok(())
 }
