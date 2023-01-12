@@ -5,7 +5,7 @@ use std::thread;
 
 use super::user_interface_thread::UserInterfaceEvent;
 
-fn command_output_thread(
+pub fn command_output_thread(
     user_interface_events: mpsc::Sender<UserInterfaceEvent>,
     pty_master: PtyMaster,
 ) -> thread::JoinHandle<io::Result<()>> {
