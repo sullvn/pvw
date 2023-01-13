@@ -65,6 +65,7 @@ fn on_user_input_character(
 
     termios::tcflush(pty_master.as_raw_fd(), termios::FlushArg::TCIOFLUSH)?;
 
+    // TODO: Dedupe
     match char {
         // Escape, Carriage Return, Newline
         '\u{1b}' | '\r' | '\n' => {}
