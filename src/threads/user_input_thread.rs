@@ -1,5 +1,6 @@
 use nix::pty::PtyMaster;
 use nix::sys::termios;
+use nix::unistd::Pid;
 use std::io::{self, BufReader, Read};
 use std::os::fd::{AsRawFd, OwnedFd};
 use std::process::{self, Command};
@@ -7,13 +8,15 @@ use std::sync::mpsc;
 use std::thread;
 use utf8::BufReadDecoder;
 
+use super::command_exit_thread::CommandExitEvent;
 use super::user_interface_thread::UserInterfaceEvent;
 
 pub enum UserInputEvent {
-    CommandExited(process::ExitStatus),
+    CommandExited(Pid, i32),
 }
 
 pub fn user_input_thread<R: Read + Send>(
+    command_exit_events: mpsc::Sender<CommandExitEvent>,
     user_interface_events: mpsc::Sender<UserInterfaceEvent>,
     user_input_events: mpsc::Receiver<UserInputEvent>,
     pty_master: PtyMaster,
@@ -29,6 +32,7 @@ pub fn user_input_thread<R: Read + Send>(
             let str = maybe_str?;
             for c in str.chars() {
                 on_user_input_character(
+                    &command_exit_events,
                     &user_interface_events,
                     &user_input_events,
                     &pty_master,
@@ -45,6 +49,7 @@ pub fn user_input_thread<R: Read + Send>(
 }
 
 fn on_user_input_character(
+    command_exit_events: &mpsc::Sender<CommandExitEvent>,
     user_interface_events: &mpsc::Sender<UserInterfaceEvent>,
     user_input_events: &mpsc::Receiver<UserInputEvent>,
     pty_master: &PtyMaster,
@@ -91,6 +96,11 @@ fn on_user_input_character(
         .stdout(pty_slave_fd.try_clone()?)
         .stderr(pty_slave_fd.try_clone()?)
         .spawn()?;
+
+    command_exit_events.send(CommandExitEvent::CommandStarted(Pid::from_raw(
+        command_process_new.id() as i32,
+    )))?;
+
     command_process = &mut Some(command_process_new);
 
     Ok(())

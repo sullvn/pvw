@@ -1,13 +1,12 @@
+use nix::unistd::Pid;
 use std::io::{self, BufWriter, Stdout, Write};
-use std::process;
-use std::string::String;
 use std::sync::mpsc;
 use std::thread;
 
 pub enum UserInterfaceEvent {
     KeyPress(char),
     CommandOutput(String),
-    CommandExit(process::ExitStatus),
+    CommandExited(Pid, i32),
 }
 
 pub fn user_interface_thread(
@@ -37,7 +36,7 @@ fn handle_user_interface_event(
     event: UserInterfaceEvent,
 ) -> io::Result<()> {
     match event {
-        UserInterfaceEvent::CommandExit(..) => {}
+        UserInterfaceEvent::CommandExited(..) => {}
         UserInterfaceEvent::CommandOutput(output) => {
             //
             // - Move down to next line
