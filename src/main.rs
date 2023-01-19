@@ -3,16 +3,21 @@ use nix::pty::{grantpt, posix_openpt, ptsname, unlockpt};
 use nix::sys::termios;
 use nix::unistd::isatty;
 use std::fs::File;
-use std::io::{self, stdin, stdout};
+use std::io::{stdin, stdout};
 use std::os::fd::{AsRawFd, OwnedFd};
 use std::sync::mpsc;
 
+mod error;
+mod result;
+mod threads;
+
+use crate::result::Result;
 use crate::threads::{
     command_exit_thread, command_output_thread, user_input_thread, user_interface_thread,
     CommandExitEvent, UserInputEvent, UserInterfaceEvent,
 };
 
-fn main() -> io::Result<()> {
+fn main() -> Result<()> {
     //
     // Input processing
     //
@@ -27,14 +32,16 @@ fn main() -> io::Result<()> {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
             "stdin needs to be a tty",
-        ));
+        )
+        .into());
     }
     let is_stdout_tty = isatty(stdout_fd)?;
     if !is_stdout_tty {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
             "stdout needs to be a tty",
-        ));
+        )
+        .into());
     }
 
     //
