@@ -48,7 +48,6 @@ fn main() -> Result<()> {
     // Terminal configuration
     //
     let mut term_config = termios::tcgetattr(stdout_fd)?;
-    let terminal_config_original = term_config.clone();
     termios::cfmakeraw(&mut term_config);
     termios::tcsetattr(stdout_fd, termios::SetArg::TCSANOW, &term_config)?;
 

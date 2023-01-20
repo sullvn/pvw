@@ -1,7 +1,8 @@
 use nix::pty::PtyMaster;
 use nix::sys::termios;
 use nix::unistd::Pid;
-use std::io::{self, BufReader, Read};
+use std::io::BufReader;
+use std::io::Stdin;
 use std::os::fd::{AsRawFd, OwnedFd};
 use std::process::{self, Command};
 use std::sync::mpsc;
@@ -10,19 +11,20 @@ use utf8::BufReadDecoder;
 
 use super::command_exit_thread::CommandExitEvent;
 use super::user_interface_thread::UserInterfaceEvent;
+use crate::result::Result;
 
 pub enum UserInputEvent {
     CommandExited(Pid, i32),
 }
 
-pub fn user_input_thread<R: Read + Send>(
+pub fn user_input_thread(
     command_exit_events: mpsc::Sender<CommandExitEvent>,
     user_interface_events: mpsc::Sender<UserInterfaceEvent>,
     user_input_events: mpsc::Receiver<UserInputEvent>,
     pty_master: PtyMaster,
     pty_slave_fd: OwnedFd,
-    user_input: R,
-) -> thread::JoinHandle<io::Result<()>> {
+    user_input: Stdin,
+) -> thread::JoinHandle<Result<()>> {
     thread::spawn(move || {
         let mut utf8_input = BufReadDecoder::new(BufReader::new(user_input));
         let mut command_text = String::new();
@@ -57,10 +59,10 @@ fn on_user_input_character(
     command_text: &mut String,
     command_process: &mut Option<process::Child>,
     char: char,
-) -> io::Result<()> {
+) -> Result<()> {
     user_interface_events.send(UserInterfaceEvent::KeyPress(char))?;
 
-    if let Some(cp) = command_process.take() {
+    if let Some(mut cp) = command_process.take() {
         cp.kill()?;
     }
 
@@ -101,7 +103,7 @@ fn on_user_input_character(
         command_process_new.id() as i32,
     )))?;
 
-    command_process = &mut Some(command_process_new);
+    command_process.replace(command_process_new);
 
     Ok(())
 }
