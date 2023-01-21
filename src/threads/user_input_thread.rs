@@ -64,10 +64,9 @@ fn on_user_input_character(
 
     if let Some(mut cp) = command_process.take() {
         cp.kill()?;
-    }
-
-    match user_input_events.recv()? {
-        UserInputEvent::CommandExited(..) => {}
+        match user_input_events.recv()? {
+            UserInputEvent::CommandExited(..) => {}
+        }
     }
 
     termios::tcflush(pty_master.as_raw_fd(), termios::FlushArg::TCIOFLUSH)?;
