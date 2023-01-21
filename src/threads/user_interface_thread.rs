@@ -44,7 +44,7 @@ fn handle_user_interface_event(
             //
             stdout.write_all("\u{1b}[1;2\u{1b}[0J".as_bytes())?;
 
-            io::copy(&mut output.as_bytes(), stdout);
+            io::copy(&mut output.as_bytes(), stdout)?;
         }
         UserInterfaceEvent::KeyPress(char) => {
             // TODO: Dedupe

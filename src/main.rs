@@ -1,10 +1,10 @@
 use nix::fcntl::OFlag;
-use nix::pty::{grantpt, posix_openpt, ptsname, unlockpt, PtyMaster};
+use nix::pty::{grantpt, posix_openpt, ptsname, unlockpt};
 use nix::sys::termios;
 use nix::unistd::isatty;
 use std::fs::File;
 use std::io::{stdin, stdout};
-use std::os::fd::{AsFd, AsRawFd, FromRawFd, IntoRawFd, OwnedFd};
+use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd, OwnedFd};
 use std::sync::mpsc;
 
 mod error;

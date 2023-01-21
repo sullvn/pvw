@@ -30,13 +30,13 @@ impl Display for Error {
 impl error::Error for Error {}
 
 impl From<mpsc::RecvError> for Error {
-    fn from(err: mpsc::RecvError) -> Self {
+    fn from(_err: mpsc::RecvError) -> Self {
         Self::ChannelRecvError
     }
 }
 
 impl<T> From<mpsc::SendError<T>> for Error {
-    fn from(err: mpsc::SendError<T>) -> Self {
+    fn from(_err: mpsc::SendError<T>) -> Self {
         Self::ChannelSendError
     }
 }

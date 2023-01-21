@@ -10,7 +10,6 @@ use crate::result::Result;
 
 pub enum CommandExitEvent {
     CommandStarted(Pid),
-    Stop,
 }
 
 pub fn command_exit_thread(
@@ -21,7 +20,6 @@ pub fn command_exit_thread(
     thread::spawn(move || {
         for cee in command_exit_events {
             match cee {
-                CommandExitEvent::Stop => break,
                 CommandExitEvent::CommandStarted(pid) => {
                     let wait_status = waitpid(pid, Some(WaitPidFlag::WEXITED))?;
                     if let WaitStatus::Exited(pid_exited, exit_code) = wait_status {
