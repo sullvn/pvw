@@ -21,7 +21,10 @@ pub fn command_exit_thread(
         for cee in command_exit_events {
             match cee {
                 CommandExitEvent::CommandStarted(pid) => {
+                    dbg!("Exit: Command started");
+                    dbg!(pid);
                     let wait_status = waitpid(pid, Some(WaitPidFlag::WEXITED))?;
+                    dbg!("Exit: Command has been waited for");
                     if let WaitStatus::Exited(pid_exited, exit_code) = wait_status {
                         if pid != pid_exited {
                             return Err(

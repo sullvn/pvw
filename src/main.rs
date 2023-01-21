@@ -18,6 +18,8 @@ use crate::threads::{
 };
 
 fn main() -> Result<()> {
+    dbg!("Main: Start");
+
     //
     // Input processing
     //
@@ -100,6 +102,7 @@ fn main() -> Result<()> {
     let user_interface_thread_handle =
         user_interface_thread(user_interface_events_receiver, stdout);
 
+    dbg!("Main: Spawned threads, now waiting");
     let command_exit_thread_result = command_exit_thread_handle.join()?;
     let command_output_thread_result = command_output_thread_handle.join()?;
     let user_input_thread_result = user_input_thread_handle.join()?;

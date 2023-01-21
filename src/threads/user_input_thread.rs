@@ -1,8 +1,7 @@
 use nix::sys::termios;
 use nix::unistd::Pid;
 use std::fs::File;
-use std::io::BufReader;
-use std::io::Stdin;
+use std::io::{self, BufReader, Stdin};
 use std::os::fd::{AsRawFd, OwnedFd};
 use std::process::{self, Command};
 use std::sync::mpsc;
@@ -26,6 +25,7 @@ pub fn user_input_thread(
     user_input: Stdin,
 ) -> thread::JoinHandle<Result<()>> {
     thread::spawn(move || {
+        dbg!("Input: Thread started");
         let mut utf8_input = BufReadDecoder::new(BufReader::new(user_input));
         let mut command_text = String::new();
         let mut command_process: Option<process::Child> = None;
@@ -60,16 +60,20 @@ fn on_user_input_character(
     command_process: &mut Option<process::Child>,
     char: char,
 ) -> Result<()> {
+    dbg!("Input: Handling new input character");
     user_interface_events.send(UserInterfaceEvent::KeyPress(char))?;
 
     if let Some(mut cp) = command_process.take() {
+        dbg!("Input: Waiting for process");
         cp.kill()?;
         match user_input_events.recv()? {
             UserInputEvent::CommandExited(..) => {}
         }
+        dbg!("Input: Done waiting for process");
     }
 
     termios::tcflush(pty_master.as_raw_fd(), termios::FlushArg::TCIOFLUSH)?;
+    dbg!("Input: Flushed terminal buffer");
 
     // TODO: Dedupe
     match char {
@@ -91,16 +95,24 @@ fn on_user_input_character(
         None => return Ok(()),
     };
 
+    dbg!("Input: Spawning child process");
     let command_process_new = Command::new(program)
         .args(args)
         .stdin(pty_slave_fd.try_clone()?)
         .stdout(pty_slave_fd.try_clone()?)
         .stderr(pty_slave_fd.try_clone()?)
-        .spawn()?;
+        .spawn();
+    let command_process_new = match command_process_new {
+        Ok(new_process) => new_process,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(err) => return Err(err.into()),
+    };
+    dbg!("Input: Done spawning child process");
+    dbg!(command_process_new.id());
 
-    command_exit_events.send(CommandExitEvent::CommandStarted(Pid::from_raw(
-        command_process_new.id() as i32,
-    )))?;
+    command_exit_events.send(CommandExitEvent::CommandStarted(Pid::from_raw(dbg!(dbg!(
+        command_process_new.id() as i32
+    )))))?;
 
     command_process.replace(command_process_new);
 
