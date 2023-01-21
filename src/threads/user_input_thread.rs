@@ -1,6 +1,6 @@
-use nix::pty::PtyMaster;
 use nix::sys::termios;
 use nix::unistd::Pid;
+use std::fs::File;
 use std::io::BufReader;
 use std::io::Stdin;
 use std::os::fd::{AsRawFd, OwnedFd};
@@ -21,7 +21,7 @@ pub fn user_input_thread(
     command_exit_events: mpsc::Sender<CommandExitEvent>,
     user_interface_events: mpsc::Sender<UserInterfaceEvent>,
     user_input_events: mpsc::Receiver<UserInputEvent>,
-    pty_master: PtyMaster,
+    pty_master: File,
     pty_slave_fd: OwnedFd,
     user_input: Stdin,
 ) -> thread::JoinHandle<Result<()>> {
@@ -54,7 +54,7 @@ fn on_user_input_character(
     command_exit_events: &mpsc::Sender<CommandExitEvent>,
     user_interface_events: &mpsc::Sender<UserInterfaceEvent>,
     user_input_events: &mpsc::Receiver<UserInputEvent>,
-    pty_master: &PtyMaster,
+    pty_master: &File,
     pty_slave_fd: &OwnedFd,
     command_text: &mut String,
     command_process: &mut Option<process::Child>,

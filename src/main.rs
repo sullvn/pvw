@@ -1,10 +1,10 @@
 use nix::fcntl::OFlag;
-use nix::pty::{grantpt, posix_openpt, ptsname, unlockpt};
+use nix::pty::{grantpt, posix_openpt, ptsname, unlockpt, PtyMaster};
 use nix::sys::termios;
 use nix::unistd::isatty;
 use std::fs::File;
 use std::io::{stdin, stdout};
-use std::os::fd::{AsRawFd, OwnedFd};
+use std::os::fd::{AsFd, AsRawFd, FromRawFd, IntoRawFd, OwnedFd};
 use std::sync::mpsc;
 
 mod error;
@@ -70,6 +70,9 @@ fn main() -> Result<()> {
         .open(pty_slave_path)?
         .into();
 
+    let pty_master_1 = unsafe { File::from_raw_fd(pty_master.into_raw_fd()) };
+    let pty_master_2 = pty_master_1.try_clone()?;
+
     //
     // Threads
     //
@@ -85,12 +88,12 @@ fn main() -> Result<()> {
         command_exit_events_receiver,
     );
     let command_output_thread_handle =
-        command_output_thread(user_interface_events_sender.clone(), pty_master);
+        command_output_thread(user_interface_events_sender.clone(), pty_master_1);
     let user_input_thread_handle = user_input_thread(
         command_exit_events_sender,
         user_interface_events_sender,
         user_input_events_receiver,
-        pty_master,
+        pty_master_2,
         pty_slave_fd,
         stdin,
     );
