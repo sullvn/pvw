@@ -5,9 +5,12 @@ in
   with nixpkgs;
   mkShell {
     buildInputs = [
-      (nixpkgs.latest.rustChannels.stable.rust.override {
-        extensions = ["rust-src"];
-      })
+      # (nixpkgs.latest.rustChannels.stable.rust.override {
+      #  extensions = ["rust-src"];
+      # })
+      nixpkgs.rustc
+      nixpkgs.cargo
+      nixpkgs.rustfmt
       nixpkgs.rust-analyzer
       nixpkgs.libiconv
       nixpkgs.llvmPackages.lldb
