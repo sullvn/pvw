@@ -18,6 +18,8 @@ pub fn command_output_thread(
     mut pty_master: File,
 ) -> thread::JoinHandle<Result<()>> {
     thread::spawn(move || loop {
+        let mut buf: [u8; 1000] = [0; 1000];
+
         match command_output_events.recv()? {
             CommandOutputEvent::Stop => return Ok(()),
             CommandOutputEvent::CommandExited => {}
@@ -26,6 +28,7 @@ pub fn command_output_thread(
                     &user_interface_events,
                     &command_output_events,
                     &mut pty_master,
+                    &mut buf,
                 )?;
 
                 if let ReadCommandResult::Stop = read_result {
@@ -45,8 +48,10 @@ fn read_command_output(
     user_interface_events: &mpsc::Sender<UserInterfaceEvent>,
     command_output_events: &mpsc::Receiver<CommandOutputEvent>,
     pty_master: &mut File,
+    output_buffer: &mut [u8],
 ) -> Result<ReadCommandResult> {
     let mut bytes_read = 1;
+
     while 0 < bytes_read {
         match command_output_events.try_recv() {
             Err(mpsc::TryRecvError::Empty) => {}
@@ -58,13 +63,21 @@ fn read_command_output(
             Ok(CommandOutputEvent::Stop) => return Ok(ReadCommandResult::Stop),
         }
 
-        let mut output = String::with_capacity(1000);
-
-        bytes_read = pty_master.read_to_string(&mut output)?;
+        bytes_read = pty_master.read(output_buffer)?;
         if bytes_read < 1 {
             return Ok(ReadCommandResult::Stop);
         }
 
+        // TODO: Investigate the ramifications of
+        //       allowing partial output of control
+        //       characters
+        //
+        // TODO: Properly handle cut-off portions
+        //       of valid, multi-byte UTF-8 characters.
+        //       Keep the portion around and prepend
+        //       it onto the next read result.
+        //
+        let output = String::from_utf8_lossy(&output_buffer).into_owned();
         user_interface_events.send(UserInterfaceEvent::CommandOutput(output))?;
     }
 
