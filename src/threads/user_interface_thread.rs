@@ -6,7 +6,7 @@ use std::thread;
 pub enum UserInterfaceEvent {
     KeyPress(char),
     CommandOutput(String),
-    CommandExited(Pid, i32),
+    CommandExited(Pid, Option<i32>),
 }
 
 pub fn user_interface_thread(

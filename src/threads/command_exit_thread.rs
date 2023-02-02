@@ -1,3 +1,4 @@
+use nix::sys::signal::SIGKILL;
 use nix::sys::wait::{waitpid, WaitStatus};
 use nix::unistd::Pid;
 use std::io;
@@ -24,23 +25,36 @@ pub fn command_exit_thread(
             match cee {
                 CommandExitEvent::CommandStarted(pid) => {
                     let wait_status = waitpid(pid, None)?;
-                    if let WaitStatus::Exited(pid_exited, exit_code) = wait_status {
-                        if pid != pid_exited {
-                            return Err(
-                                io::Error::new(io::ErrorKind::Other, "Wrong pid exited").into()
-                            );
-                        }
+                    match wait_status {
+                        WaitStatus::Exited(pid_exited, _)
+                        | WaitStatus::Signaled(pid_exited, SIGKILL, _) => {
+                            let exit_code = if let WaitStatus::Exited(_, exit_code) = wait_status {
+                                Some(exit_code)
+                            } else {
+                                None
+                            };
 
-                        command_output_events.send(CommandOutputEvent::CommandExited)?;
-                        user_input_events.send(UserInputEvent::CommandExited(pid, exit_code))?;
-                        user_interface_events
-                            .send(UserInterfaceEvent::CommandExited(pid, exit_code))?;
-                    } else {
-                        return Err(io::Error::new(
-                            io::ErrorKind::Other,
-                            "Wrong child process event",
-                        )
-                        .into());
+                            if pid != pid_exited {
+                                return Err(io::Error::new(
+                                    io::ErrorKind::Other,
+                                    "Wrong pid exited",
+                                )
+                                .into());
+                            }
+
+                            command_output_events.send(CommandOutputEvent::CommandExited)?;
+                            user_input_events
+                                .send(UserInputEvent::CommandExited(pid, exit_code))?;
+                            user_interface_events
+                                .send(UserInterfaceEvent::CommandExited(pid, exit_code))?;
+                        }
+                        _ => {
+                            return Err(io::Error::new(
+                                io::ErrorKind::Other,
+                                format!("Wrong child process event: {:?}", wait_status),
+                            )
+                            .into());
+                        }
                     }
                 }
             }

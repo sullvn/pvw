@@ -14,7 +14,7 @@ use super::user_interface_thread::UserInterfaceEvent;
 use crate::result::Result;
 
 pub enum UserInputEvent {
-    CommandExited(Pid, i32),
+    CommandExited(Pid, Option<i32>),
 }
 
 pub fn user_input_thread(
