@@ -3,6 +3,8 @@ use std::io::Read;
 use std::sync::mpsc;
 use std::thread;
 
+use super::command_exit_thread::CommandExitEvent;
+use super::user_input_thread::UserInputEvent;
 use super::user_interface_thread::UserInterfaceEvent;
 use crate::result::Result;
 
@@ -13,13 +15,37 @@ pub enum CommandOutputEvent {
 }
 
 pub fn command_output_thread(
+    command_exit_events: mpsc::Sender<CommandExitEvent>,
+    user_input_events: mpsc::Sender<UserInputEvent>,
     user_interface_events: mpsc::Sender<UserInterfaceEvent>,
     command_output_events: mpsc::Receiver<CommandOutputEvent>,
     mut pty_master: File,
 ) -> thread::JoinHandle<Result<()>> {
-    thread::spawn(move || loop {
-        let mut buf: [u8; 1000] = [0; 1000];
+    thread::spawn(move || {
+        if let Err(err) = command_output(
+            &user_interface_events,
+            &command_output_events,
+            &mut pty_master,
+        ) {
+            command_exit_events.send(CommandExitEvent::Stop)?;
+            user_input_events.send(UserInputEvent::Stop)?;
+            user_interface_events.send(UserInterfaceEvent::Stop)?;
 
+            return Err(err);
+        }
+
+        Ok(())
+    })
+}
+
+pub fn command_output(
+    user_interface_events: &mpsc::Sender<UserInterfaceEvent>,
+    command_output_events: &mpsc::Receiver<CommandOutputEvent>,
+    pty_master: &mut File,
+) -> Result<()> {
+    let mut buf: [u8; 1000] = [0; 1000];
+
+    loop {
         match command_output_events.recv()? {
             CommandOutputEvent::Stop => return Ok(()),
             CommandOutputEvent::CommandExited => {}
@@ -27,7 +53,7 @@ pub fn command_output_thread(
                 let read_result = read_command_output(
                     &user_interface_events,
                     &command_output_events,
-                    &mut pty_master,
+                    pty_master,
                     &mut buf,
                 )?;
 
@@ -36,7 +62,7 @@ pub fn command_output_thread(
                 }
             }
         }
-    })
+    }
 }
 
 enum ReadCommandResult {

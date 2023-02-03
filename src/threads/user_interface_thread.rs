@@ -3,39 +3,73 @@ use std::io::{self, BufWriter, Stdout, Write};
 use std::sync::mpsc;
 use std::thread;
 
+use super::command_exit_thread::CommandExitEvent;
+use super::command_output_thread::CommandOutputEvent;
+use super::user_input_thread::UserInputEvent;
+use crate::result::Result;
+
 pub enum UserInterfaceEvent {
     KeyPress(char),
     CommandOutput(String),
     CommandExited(Pid, Option<i32>),
+    Stop,
 }
 
 pub fn user_interface_thread(
+    command_exit_events: mpsc::Sender<CommandExitEvent>,
+    command_output_events: mpsc::Sender<CommandOutputEvent>,
+    user_input_events: mpsc::Sender<UserInputEvent>,
     user_interface_events: mpsc::Receiver<UserInterfaceEvent>,
     stdout: Stdout,
-) -> thread::JoinHandle<io::Result<()>> {
-    thread::spawn(|| {
-        let mut command_text = String::new();
-        let mut stdout = BufWriter::new(stdout);
+) -> thread::JoinHandle<Result<()>> {
+    thread::spawn(move || {
+        if let Err(err) = user_interface(&user_interface_events, stdout) {
+            command_exit_events.send(CommandExitEvent::Stop)?;
+            command_output_events.send(CommandOutputEvent::Stop)?;
+            user_input_events.send(UserInputEvent::Stop)?;
 
-        // - Erase whole display (keep scrollback)
-        // - Move cursor to top
-        stdout.write_all("\u{1b}[2J\u{1b}[1;1H".as_bytes())?;
-        stdout.flush()?;
-
-        for uie in user_interface_events {
-            handle_user_interface_event(&mut stdout, &mut command_text, uie)?;
+            return Err(err);
         }
 
         Ok(())
     })
 }
 
+fn user_interface(
+    user_interface_events: &mpsc::Receiver<UserInterfaceEvent>,
+    stdout: Stdout,
+) -> Result<()> {
+    let mut command_text = String::new();
+    let mut stdout = BufWriter::new(stdout);
+
+    // - Erase whole display (keep scrollback)
+    // - Move cursor to top
+    stdout.write_all("\u{1b}[2J\u{1b}[1;1H".as_bytes())?;
+    stdout.flush()?;
+
+    for uie in user_interface_events {
+        let user_interface_result =
+            handle_user_interface_event(&mut stdout, &mut command_text, uie)?;
+        if let UserInterfaceResult::Stop = user_interface_result {
+            return Ok(());
+        }
+    }
+
+    Ok(())
+}
+
+enum UserInterfaceResult {
+    Continue,
+    Stop,
+}
+
 fn handle_user_interface_event(
     stdout: &mut BufWriter<Stdout>,
     command_text: &mut String,
     event: UserInterfaceEvent,
-) -> io::Result<()> {
+) -> Result<UserInterfaceResult> {
     match event {
+        UserInterfaceEvent::Stop => return Ok(UserInterfaceResult::Stop),
         UserInterfaceEvent::CommandExited(..) => {}
         UserInterfaceEvent::CommandOutput(output) => {
             //
@@ -82,5 +116,5 @@ fn handle_user_interface_event(
     }
 
     stdout.flush()?;
-    Ok(())
+    Ok(UserInterfaceResult::Continue)
 }

@@ -86,26 +86,33 @@ fn main() -> Result<()> {
 
     let command_exit_thread_handle = command_exit_thread(
         command_output_events_sender.clone(),
-        user_input_events_sender,
+        user_input_events_sender.clone(),
         user_interface_events_sender.clone(),
         command_exit_events_receiver,
     );
     let command_output_thread_handle = command_output_thread(
+        command_exit_events_sender.clone(),
+        user_input_events_sender.clone(),
         user_interface_events_sender.clone(),
         command_output_events_receiver,
         pty_master_1,
     );
     let user_input_thread_handle = user_input_thread(
-        command_exit_events_sender,
-        command_output_events_sender,
+        command_exit_events_sender.clone(),
+        command_output_events_sender.clone(),
         user_interface_events_sender,
         user_input_events_receiver,
         pty_master_2,
         pty_slave_fd,
         stdin,
     );
-    let user_interface_thread_handle =
-        user_interface_thread(user_interface_events_receiver, stdout);
+    let user_interface_thread_handle = user_interface_thread(
+        command_exit_events_sender,
+        command_output_events_sender,
+        user_input_events_sender,
+        user_interface_events_receiver,
+        stdout,
+    );
 
     let command_exit_thread_result = command_exit_thread_handle.join()?;
     let command_output_thread_result = command_output_thread_handle.join()?;

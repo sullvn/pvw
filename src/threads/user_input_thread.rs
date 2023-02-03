@@ -15,6 +15,7 @@ use crate::result::Result;
 
 pub enum UserInputEvent {
     CommandExited(Pid, Option<i32>),
+    Stop,
 }
 
 pub fn user_input_thread(
@@ -24,32 +25,69 @@ pub fn user_input_thread(
     user_input_events: mpsc::Receiver<UserInputEvent>,
     pty_master: File,
     pty_slave_fd: OwnedFd,
-    user_input: Stdin,
+    stdin: Stdin,
 ) -> thread::JoinHandle<Result<()>> {
     thread::spawn(move || {
-        let mut utf8_input = BufReadDecoder::new(BufReader::new(user_input));
-        let mut command_text = String::new();
-        let mut command_process: Option<process::Child> = None;
+        if let Err(err) = user_input(
+            &command_exit_events,
+            &command_output_events,
+            &user_interface_events,
+            &user_input_events,
+            pty_master,
+            pty_slave_fd,
+            stdin,
+        ) {
+            command_exit_events.send(CommandExitEvent::Stop)?;
+            command_output_events.send(CommandOutputEvent::Stop)?;
+            user_interface_events.send(UserInterfaceEvent::Stop)?;
 
-        while let Some(maybe_str) = utf8_input.next_lossy() {
-            let str = maybe_str?;
-            for c in str.chars() {
-                on_user_input_character(
-                    &command_exit_events,
-                    &command_output_events,
-                    &user_interface_events,
-                    &user_input_events,
-                    &pty_master,
-                    &pty_slave_fd,
-                    &mut command_text,
-                    &mut command_process,
-                    c,
-                )?;
-            }
+            return Err(err);
         }
 
         Ok(())
     })
+}
+
+fn user_input(
+    command_exit_events: &mpsc::Sender<CommandExitEvent>,
+    command_output_events: &mpsc::Sender<CommandOutputEvent>,
+    user_interface_events: &mpsc::Sender<UserInterfaceEvent>,
+    user_input_events: &mpsc::Receiver<UserInputEvent>,
+    pty_master: File,
+    pty_slave_fd: OwnedFd,
+    stdin: Stdin,
+) -> Result<()> {
+    let mut utf8_input = BufReadDecoder::new(BufReader::new(stdin));
+    let mut command_text = String::new();
+    let mut command_process: Option<process::Child> = None;
+
+    while let Some(maybe_str) = utf8_input.next_lossy() {
+        let str = maybe_str?;
+        for c in str.chars() {
+            let user_input_result = on_user_input_character(
+                &command_exit_events,
+                &command_output_events,
+                &user_interface_events,
+                &user_input_events,
+                &pty_master,
+                &pty_slave_fd,
+                &mut command_text,
+                &mut command_process,
+                c,
+            )?;
+
+            if let UserInputResult::Stop = user_input_result {
+                return Ok(());
+            }
+        }
+    }
+
+    Ok(())
+}
+
+enum UserInputResult {
+    Continue,
+    Stop,
 }
 
 fn on_user_input_character(
@@ -62,7 +100,7 @@ fn on_user_input_character(
     command_text: &mut String,
     command_process: &mut Option<process::Child>,
     char: char,
-) -> Result<()> {
+) -> Result<UserInputResult> {
     user_interface_events.send(UserInterfaceEvent::KeyPress(char))?;
 
     if let Some(mut cp) = command_process.take() {
@@ -80,6 +118,7 @@ fn on_user_input_character(
         };
         match user_input_events.recv()? {
             UserInputEvent::CommandExited(..) => {}
+            UserInputEvent::Stop => return Ok(UserInputResult::Stop),
         }
     }
 
@@ -102,7 +141,7 @@ fn on_user_input_character(
     let args = command_tokens;
     let program = match maybe_program {
         Some(program) => program,
-        None => return Ok(()),
+        None => return Ok(UserInputResult::Continue),
     };
 
     let command_process_new = Command::new(program)
@@ -113,7 +152,7 @@ fn on_user_input_character(
         .spawn();
     let command_process_new = match command_process_new {
         Ok(new_process) => new_process,
-        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(UserInputResult::Continue),
         Err(err) => return Err(err.into()),
     };
 
@@ -124,5 +163,5 @@ fn on_user_input_character(
 
     command_process.replace(command_process_new);
 
-    Ok(())
+    Ok(UserInputResult::Continue)
 }
