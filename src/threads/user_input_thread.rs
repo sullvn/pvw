@@ -127,7 +127,7 @@ fn on_user_input_character(
     // TODO: Dedupe
     match char {
         // Escape, Carriage Return, Newline
-        '\u{1b}' | '\r' | '\n' => {}
+        '\u{1b}' | '\r' | '\n' => return Ok(UserInputResult::Stop),
         // Backspace, Delete
         '\u{8}' | '\u{7f}' => {
             command_text.pop();
