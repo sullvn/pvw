@@ -22,20 +22,18 @@ pub fn command_exit_thread(
     command_exit_events: mpsc::Receiver<CommandExitEvent>,
 ) -> thread::JoinHandle<Result<()>> {
     thread::spawn(move || {
-        if let Err(err) = command_exit(
+        let result = command_exit(
             &command_output_events,
             &user_input_events,
             &user_interface_events,
             &command_exit_events,
-        ) {
-            command_output_events.send(CommandOutputEvent::Stop)?;
-            user_input_events.send(UserInputEvent::Stop)?;
-            user_interface_events.send(UserInterfaceEvent::Stop)?;
+        );
 
-            return Err(err);
-        }
+        command_output_events.send(CommandOutputEvent::Stop)?;
+        user_input_events.send(UserInputEvent::Stop)?;
+        user_interface_events.send(UserInterfaceEvent::Stop)?;
 
-        Ok(())
+        return result;
     })
 }
 

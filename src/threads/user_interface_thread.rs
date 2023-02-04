@@ -23,15 +23,13 @@ pub fn user_interface_thread(
     stdout: Stdout,
 ) -> thread::JoinHandle<Result<()>> {
     thread::spawn(move || {
-        if let Err(err) = user_interface(&user_interface_events, stdout) {
-            command_exit_events.send(CommandExitEvent::Stop)?;
-            command_output_events.send(CommandOutputEvent::Stop)?;
-            user_input_events.send(UserInputEvent::Stop)?;
+        let result = user_interface(&user_interface_events, stdout);
 
-            return Err(err);
-        }
+        command_exit_events.send(CommandExitEvent::Stop)?;
+        command_output_events.send(CommandOutputEvent::Stop)?;
+        user_input_events.send(UserInputEvent::Stop)?;
 
-        Ok(())
+        return result;
     })
 }
 

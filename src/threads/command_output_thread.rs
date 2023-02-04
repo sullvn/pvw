@@ -22,19 +22,17 @@ pub fn command_output_thread(
     mut pty_master: File,
 ) -> thread::JoinHandle<Result<()>> {
     thread::spawn(move || {
-        if let Err(err) = command_output(
+        let result = command_output(
             &user_interface_events,
             &command_output_events,
             &mut pty_master,
-        ) {
-            command_exit_events.send(CommandExitEvent::Stop)?;
-            user_input_events.send(UserInputEvent::Stop)?;
-            user_interface_events.send(UserInterfaceEvent::Stop)?;
+        );
 
-            return Err(err);
-        }
+        command_exit_events.send(CommandExitEvent::Stop)?;
+        user_input_events.send(UserInputEvent::Stop)?;
+        user_interface_events.send(UserInterfaceEvent::Stop)?;
 
-        Ok(())
+        return result;
     })
 }
 

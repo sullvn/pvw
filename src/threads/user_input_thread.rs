@@ -28,7 +28,7 @@ pub fn user_input_thread(
     stdin: Stdin,
 ) -> thread::JoinHandle<Result<()>> {
     thread::spawn(move || {
-        if let Err(err) = user_input(
+        let result = user_input(
             &command_exit_events,
             &command_output_events,
             &user_interface_events,
@@ -36,15 +36,13 @@ pub fn user_input_thread(
             pty_master,
             pty_slave_fd,
             stdin,
-        ) {
-            command_exit_events.send(CommandExitEvent::Stop)?;
-            command_output_events.send(CommandOutputEvent::Stop)?;
-            user_interface_events.send(UserInterfaceEvent::Stop)?;
+        );
 
-            return Err(err);
-        }
+        command_exit_events.send(CommandExitEvent::Stop)?;
+        command_output_events.send(CommandOutputEvent::Stop)?;
+        user_interface_events.send(UserInterfaceEvent::Stop)?;
 
-        Ok(())
+        return result;
     })
 }
 
