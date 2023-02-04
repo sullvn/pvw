@@ -48,6 +48,7 @@ fn user_interface(
     termios::cfmakeraw(&mut term_config_raw);
 
     let mut command_text = String::new();
+    let mut command_output = String::new();
 
     // - Erase whole display (keep scrollback)
     // - Move cursor to top
@@ -59,6 +60,7 @@ fn user_interface(
             &mut stdout,
             &stdout_fd,
             &mut command_text,
+            &mut command_output,
             &term_config_original,
             &term_config_raw,
             uie,
@@ -80,14 +82,19 @@ fn handle_user_interface_event(
     stdout: &mut BufWriter<Stdout>,
     stdout_fd: &OwnedFd,
     command_text: &mut String,
+    command_output: &mut String,
     term_config_original: &Termios,
     term_config_raw: &Termios,
     event: UserInterfaceEvent,
 ) -> Result<UserInterfaceResult> {
     match event {
         UserInterfaceEvent::Stop => return Ok(UserInterfaceResult::Stop),
-        UserInterfaceEvent::CommandExited(..) => {}
+        UserInterfaceEvent::CommandExited(..) => {
+            command_output.clear();
+        }
         UserInterfaceEvent::CommandOutput(output) => {
+            command_output.push_str(&output);
+
             //
             // - Move down to next line
             // - Clear display
@@ -100,7 +107,7 @@ fn handle_user_interface_event(
                 termios::SetArg::TCSANOW,
                 &term_config_original,
             )?;
-            io::copy(&mut output.as_bytes(), stdout)?;
+            io::copy(&mut command_output.as_bytes(), stdout)?;
             stdout.flush()?;
 
             termios::tcsetattr(

@@ -101,7 +101,7 @@ fn read_command_output(
         //       Keep the portion around and prepend
         //       it onto the next read result.
         //
-        let output = String::from_utf8_lossy(&output_buffer).into_owned();
+        let output = String::from_utf8_lossy(&output_buffer[0..bytes_read]).into_owned();
         user_interface_events.send(UserInterfaceEvent::CommandOutput(output))?;
     }
 
