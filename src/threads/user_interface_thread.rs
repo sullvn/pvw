@@ -1,5 +1,7 @@
+use nix::sys::termios::{self, Termios};
 use nix::unistd::Pid;
 use std::io::{self, BufWriter, Stdout, Write};
+use std::os::fd::{AsFd, AsRawFd, OwnedFd};
 use std::sync::mpsc;
 use std::thread;
 
@@ -21,9 +23,10 @@ pub fn user_interface_thread(
     user_input_events: mpsc::Sender<UserInputEvent>,
     user_interface_events: mpsc::Receiver<UserInterfaceEvent>,
     stdout: Stdout,
+    term_config_original: Termios,
 ) -> thread::JoinHandle<Result<()>> {
     thread::spawn(move || {
-        let result = user_interface(&user_interface_events, stdout);
+        let result = user_interface(&user_interface_events, stdout, term_config_original);
 
         command_exit_events.send(CommandExitEvent::Stop)?;
         command_output_events.send(CommandOutputEvent::Stop)?;
@@ -36,9 +39,15 @@ pub fn user_interface_thread(
 fn user_interface(
     user_interface_events: &mpsc::Receiver<UserInterfaceEvent>,
     stdout: Stdout,
+    term_config_original: Termios,
 ) -> Result<()> {
-    let mut command_text = String::new();
+    let stdout_fd = stdout.as_fd().try_clone_to_owned()?;
     let mut stdout = BufWriter::new(stdout);
+
+    let mut term_config_raw = term_config_original.clone();
+    termios::cfmakeraw(&mut term_config_raw);
+
+    let mut command_text = String::new();
 
     // - Erase whole display (keep scrollback)
     // - Move cursor to top
@@ -46,8 +55,14 @@ fn user_interface(
     stdout.flush()?;
 
     for uie in user_interface_events {
-        let user_interface_result =
-            handle_user_interface_event(&mut stdout, &mut command_text, uie)?;
+        let user_interface_result = handle_user_interface_event(
+            &mut stdout,
+            &stdout_fd,
+            &mut command_text,
+            &term_config_original,
+            &term_config_raw,
+            uie,
+        )?;
         if let UserInterfaceResult::Stop = user_interface_result {
             return Ok(());
         }
@@ -63,7 +78,10 @@ enum UserInterfaceResult {
 
 fn handle_user_interface_event(
     stdout: &mut BufWriter<Stdout>,
+    stdout_fd: &OwnedFd,
     command_text: &mut String,
+    term_config_original: &Termios,
+    term_config_raw: &Termios,
     event: UserInterfaceEvent,
 ) -> Result<UserInterfaceResult> {
     match event {
@@ -74,9 +92,22 @@ fn handle_user_interface_event(
             // - Move down to next line
             // - Clear display
             //
-            stdout.write_all("\u{1b}[1;2\u{1b}[0J".as_bytes())?;
+            stdout.write_all("\u{1b}[2;1H\u{1b}[0J".as_bytes())?;
+            stdout.flush()?;
 
+            termios::tcsetattr(
+                stdout_fd.as_raw_fd(),
+                termios::SetArg::TCSANOW,
+                &term_config_original,
+            )?;
             io::copy(&mut output.as_bytes(), stdout)?;
+            stdout.flush()?;
+
+            termios::tcsetattr(
+                stdout_fd.as_raw_fd(),
+                termios::SetArg::TCSANOW,
+                &term_config_raw,
+            )?;
         }
         UserInterfaceEvent::KeyPress(char) => {
             // TODO: Dedupe
@@ -110,9 +141,10 @@ fn handle_user_interface_event(
             //
             stdout.write_all("\u{1b}[1;1H\u{1b}[0K".as_bytes())?;
             stdout.write_all(command_text.as_bytes())?;
+            stdout.write_all("█".as_bytes())?;
+            stdout.flush()?;
         }
     }
 
-    stdout.flush()?;
     Ok(UserInterfaceResult::Continue)
 }

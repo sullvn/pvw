@@ -48,6 +48,7 @@ fn main() -> Result<()> {
     // Terminal configuration
     //
     let mut term_config = termios::tcgetattr(stdout_fd)?;
+    let term_config_original = term_config.clone();
     termios::cfmakeraw(&mut term_config);
     termios::tcsetattr(stdout_fd, termios::SetArg::TCSANOW, &term_config)?;
 
@@ -112,6 +113,7 @@ fn main() -> Result<()> {
         user_input_events_sender,
         user_interface_events_receiver,
         stdout,
+        term_config_original,
     );
 
     let command_exit_thread_result = command_exit_thread_handle.join()?;
