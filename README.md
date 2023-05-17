@@ -21,6 +21,10 @@ Live preview for command-line tools.
 incantations by showing an interactive
 preview on every key stroke.
 
+<video autoplay loop>
+  <source src="docs/example.mp4">
+</video>
+
 
 ## Features
 
