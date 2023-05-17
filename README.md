@@ -23,16 +23,13 @@ preview on every key stroke.
 
 <br />
 <br />
-<br />
-<br />
-<picture>
-  <img
-    alt="Example using pvw with ripgrep"
-    src="docs/example.gif"
-  >
-</picture>
-<br />
-<br />
+<div align="center">
+<img
+  alt="Example using pvw with ripgrep"
+  src="docs/example.gif"
+  width="600"
+>
+</div>
 <br />
 <br />
 
