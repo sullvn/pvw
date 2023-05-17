@@ -21,9 +21,20 @@ Live preview for command-line tools.
 incantations by showing an interactive
 preview on every key stroke.
 
-<video autoplay loop>
-  <source src="docs/example.mp4">
-</video>
+<br />
+<br />
+<br />
+<br />
+<picture>
+  <img
+    alt="Example using pvw with ripgrep"
+    src="docs/example.gif"
+  >
+</picture>
+<br />
+<br />
+<br />
+<br />
 
 
 ## Features
